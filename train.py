@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import tensorflow as tf
 
 from sklearn.model_selection import train_test_split
@@ -213,6 +214,57 @@ def create_baseline_model(num_classes):
     return model
 
 
+def create_data_augmentation():
+    return tf.keras.Sequential([
+        layers.RandomFlip(
+            "horizontal",
+            seed=SEED
+        ),
+        layers.RandomBrightness(
+            0.12,
+            value_range=(0.0, 1.0),
+            seed=SEED
+        ),
+        layers.RandomContrast(
+            0.15,
+            seed=SEED
+        )
+    ])
+
+
+def create_augmented_model(
+    num_classes,
+    data_augmentation
+):
+    model = models.Sequential([
+        layers.Input(shape=(*IMAGE_SIZE, 3)),
+
+        data_augmentation,
+
+        layers.Conv2D(32, (3, 3), activation="relu"),
+        layers.MaxPooling2D((2, 2)),
+
+        layers.Conv2D(64, (3, 3), activation="relu"),
+        layers.MaxPooling2D((2, 2)),
+
+        layers.Conv2D(128, (3, 3), activation="relu"),
+        layers.MaxPooling2D((2, 2)),
+
+        layers.GlobalAveragePooling2D(),
+
+        layers.Dense(128, activation="relu"),
+        layers.Dense(num_classes, activation="softmax")
+    ])
+
+    model.compile(
+        optimizer="adam",
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"]
+    )
+
+    return model
+
+
 def train_baseline_model(
     model,
     train_dataset,
@@ -247,6 +299,156 @@ def train_baseline_model(
     )
 
     return history
+
+
+def train_augmented_model(
+    model,
+    train_dataset,
+    val_dataset
+):
+    early_stopping_aug = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+
+    history_augmented = model.fit(
+        train_dataset,
+        validation_data=val_dataset,
+        epochs=20,
+        callbacks=[early_stopping_aug]
+    )
+
+    early_stopping_aug_continue = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+
+    history_augmented_continue = model.fit(
+        train_dataset,
+        validation_data=val_dataset,
+        initial_epoch=20,
+        epochs=35,
+        callbacks=[early_stopping_aug_continue]
+    )
+
+    return history_augmented, history_augmented_continue
+
+
+def train_baseline_35(
+    model,
+    train_dataset,
+    val_dataset
+):
+    early_stopping_baseline_35 = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+
+    history_baseline_35 = model.fit(
+        train_dataset,
+        validation_data=val_dataset,
+        epochs=35,
+        callbacks=[early_stopping_baseline_35]
+    )
+
+    return history_baseline_35
+
+
+def compare_cnn_models(
+    history_baseline_35,
+    history_augmented,
+    history_augmented_continue
+):
+    aug_accuracy = (
+        history_augmented.history["accuracy"] +
+        history_augmented_continue.history["accuracy"]
+    )
+
+    aug_val_accuracy = (
+        history_augmented.history["val_accuracy"] +
+        history_augmented_continue.history["val_accuracy"]
+    )
+
+    aug_loss = (
+        history_augmented.history["loss"] +
+        history_augmented_continue.history["loss"]
+    )
+
+    aug_val_loss = (
+        history_augmented.history["val_loss"] +
+        history_augmented_continue.history["val_loss"]
+    )
+
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(
+        history_baseline_35.history["val_accuracy"],
+        label="CNN bez augmentacije"
+    )
+
+    plt.plot(
+        aug_val_accuracy,
+        label="CNN sa augmentacijom"
+    )
+
+    plt.xlabel("Epoha")
+    plt.ylabel("Validation accuracy")
+    plt.title("Poredjenje validacione tacnosti")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.show()
+
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(
+        history_baseline_35.history["val_loss"],
+        label="CNN bez augmentacije"
+    )
+
+    plt.plot(
+        aug_val_loss,
+        label="CNN sa augmentacijom"
+    )
+
+    plt.xlabel("Epoha")
+    plt.ylabel("Validation loss")
+    plt.title("Poredjenje validacione greske")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.show()
+
+    best_baseline_epoch = np.argmin(
+        history_baseline_35.history["val_loss"]
+    )
+
+    best_aug_epoch = np.argmin(
+        aug_val_loss
+    )
+
+    print("\nCNN bez augmentacije")
+    print(f"Najbolja epoha: {best_baseline_epoch + 1}")
+    print(
+        "Validation accuracy: "
+        f"{history_baseline_35.history['val_accuracy'][best_baseline_epoch] * 100:.2f}%"
+    )
+    print(
+        "Validation loss: "
+        f"{history_baseline_35.history['val_loss'][best_baseline_epoch]:.4f}"
+    )
+
+    print("\nCNN sa augmentacijom")
+    print(f"Najbolja epoha: {best_aug_epoch + 1}")
+    print(
+        "Validation accuracy: "
+        f"{aug_val_accuracy[best_aug_epoch] * 100:.2f}%"
+    )
+    print(
+        "Validation loss: "
+        f"{aug_val_loss[best_aug_epoch]:.4f}"
+    )
 
 
 def main():
@@ -308,6 +510,41 @@ def main():
         baseline_model,
         train_dataset,
         val_dataset
+    )
+
+    data_augmentation = create_data_augmentation()
+
+    augmented_model = create_augmented_model(
+        len(class_names),
+        data_augmentation
+    )
+
+    print("\nCNN model sa augmentacijom:")
+    augmented_model.summary()
+
+    history_augmented, history_augmented_continue = train_augmented_model(
+        augmented_model,
+        train_dataset,
+        val_dataset
+    )
+
+    baseline_model_35 = create_baseline_model(
+        len(class_names)
+    )
+
+    print("\nCNN bez augmentacije - trening do 35 epoha:")
+    baseline_model_35.summary()
+
+    history_baseline_35 = train_baseline_35(
+        baseline_model_35,
+        train_dataset,
+        val_dataset
+    )
+
+    compare_cnn_models(
+        history_baseline_35,
+        history_augmented,
+        history_augmented_continue
     )
 
 
