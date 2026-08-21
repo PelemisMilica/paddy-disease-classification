@@ -15,6 +15,7 @@ import pandas as pd
 import tensorflow as tf
 
 from sklearn.model_selection import train_test_split
+from tensorflow.keras import layers, models
 
 
 SEED = 42
@@ -184,6 +185,70 @@ def create_dataset(
     return dataset
 
 
+def create_baseline_model(num_classes):
+    model = models.Sequential([
+        layers.Input(shape=(*IMAGE_SIZE, 3)),
+
+        layers.Conv2D(32, (3, 3), activation="relu"),
+        layers.MaxPooling2D((2, 2)),
+
+        layers.Conv2D(64, (3, 3), activation="relu"),
+        layers.MaxPooling2D((2, 2)),
+
+        layers.Conv2D(128, (3, 3), activation="relu"),
+        layers.MaxPooling2D((2, 2)),
+
+        layers.GlobalAveragePooling2D(),
+
+        layers.Dense(128, activation="relu"),
+        layers.Dense(num_classes, activation="softmax")
+    ])
+
+    model.compile(
+        optimizer="adam",
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"]
+    )
+
+    return model
+
+
+def train_baseline_model(
+    model,
+    train_dataset,
+    val_dataset
+):
+    early_stopping = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+
+    history = model.fit(
+        train_dataset,
+        validation_data=val_dataset,
+        epochs=20,
+        callbacks=[early_stopping]
+    )
+
+    best_epoch = np.argmin(
+        history.history["val_loss"]
+    )
+
+    print("\nRezultat pocetnog CNN modela:")
+    print(f"Najbolja epoha: {best_epoch + 1}")
+    print(
+        "Validation accuracy: "
+        f"{history.history['val_accuracy'][best_epoch] * 100:.2f}%"
+    )
+    print(
+        "Validation loss: "
+        f"{history.history['val_loss'][best_epoch]:.4f}"
+    )
+
+    return history
+
+
 def main():
     args = parse_arguments()
 
@@ -233,6 +298,17 @@ def main():
     )
 
     print("\nSkupovi podataka su pripremljeni.")
+
+    baseline_model = create_baseline_model(len(class_names))
+
+    print("\nPocetni CNN model:")
+    baseline_model.summary()
+
+    history_baseline = train_baseline_model(
+        baseline_model,
+        train_dataset,
+        val_dataset
+    )
 
 
 if __name__ == "__main__":
