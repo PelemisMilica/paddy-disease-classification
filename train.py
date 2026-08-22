@@ -451,6 +451,225 @@ def compare_cnn_models(
     )
 
 
+def create_effnet_datasets(
+    train_dataset,
+    val_dataset,
+    test_dataset
+):
+    train_dataset_effnet = train_dataset.map(
+        lambda images, labels: (images * 255.0, labels),
+        num_parallel_calls=tf.data.AUTOTUNE
+    )
+
+    val_dataset_effnet = val_dataset.map(
+        lambda images, labels: (images * 255.0, labels),
+        num_parallel_calls=tf.data.AUTOTUNE
+    )
+
+    test_dataset_effnet = test_dataset.map(
+        lambda images, labels: (images * 255.0, labels),
+        num_parallel_calls=tf.data.AUTOTUNE
+    )
+
+    return (
+        train_dataset_effnet,
+        val_dataset_effnet,
+        test_dataset_effnet
+    )
+
+
+def create_effnet_model(num_classes):
+    base_model = tf.keras.applications.EfficientNetB0(
+        weights="imagenet",
+        include_top=False,
+        input_shape=(224, 224, 3)
+    )
+
+    base_model.trainable = False
+
+    data_augmentation_effnet = tf.keras.Sequential([
+        layers.RandomFlip(
+            "horizontal",
+            seed=SEED
+        ),
+        layers.RandomBrightness(
+            0.12,
+            value_range=(0.0, 255.0),
+            seed=SEED
+        ),
+        layers.RandomContrast(
+            0.15,
+            seed=SEED
+        )
+    ])
+
+    inputs = layers.Input(shape=(224, 224, 3))
+
+    x = data_augmentation_effnet(inputs)
+
+    x = base_model(x, training=False)
+
+    x = layers.GlobalAveragePooling2D()(x)
+
+    x = layers.Dropout(0.2)(x)
+
+    outputs = layers.Dense(
+        num_classes,
+        activation="softmax"
+    )(x)
+
+    effnet_model = tf.keras.Model(
+        inputs,
+        outputs
+    )
+
+    return effnet_model, base_model
+
+
+def train_effnet_model(
+    model,
+    train_dataset_effnet,
+    val_dataset_effnet
+):
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(
+            learning_rate=0.001
+        ),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"]
+    )
+
+    early_stopping_effnet = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+
+    history_effnet = model.fit(
+        train_dataset_effnet,
+        validation_data=val_dataset_effnet,
+        epochs=15,
+        callbacks=[early_stopping_effnet]
+    )
+
+    early_stopping_effnet_continue = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+
+    history_effnet_continue = model.fit(
+        train_dataset_effnet,
+        validation_data=val_dataset_effnet,
+        initial_epoch=15,
+        epochs=25,
+        callbacks=[early_stopping_effnet_continue]
+    )
+
+    early_stopping_effnet_continue2 = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+
+    history_effnet_continue2 = model.fit(
+        train_dataset_effnet,
+        validation_data=val_dataset_effnet,
+        initial_epoch=25,
+        epochs=35,
+        callbacks=[early_stopping_effnet_continue2]
+    )
+
+    return (
+        history_effnet,
+        history_effnet_continue,
+        history_effnet_continue2
+    )
+
+
+def show_effnet_results(
+    history_effnet,
+    history_effnet_continue,
+    history_effnet_continue2
+):
+    effnet_accuracy = (
+        history_effnet.history["accuracy"] +
+        history_effnet_continue.history["accuracy"] +
+        history_effnet_continue2.history["accuracy"]
+    )
+
+    effnet_val_accuracy = (
+        history_effnet.history["val_accuracy"] +
+        history_effnet_continue.history["val_accuracy"] +
+        history_effnet_continue2.history["val_accuracy"]
+    )
+
+    effnet_loss = (
+        history_effnet.history["loss"] +
+        history_effnet_continue.history["loss"] +
+        history_effnet_continue2.history["loss"]
+    )
+
+    effnet_val_loss = (
+        history_effnet.history["val_loss"] +
+        history_effnet_continue.history["val_loss"] +
+        history_effnet_continue2.history["val_loss"]
+    )
+
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(
+        effnet_accuracy,
+        label="Training accuracy"
+    )
+    plt.plot(
+        effnet_val_accuracy,
+        label="Validation accuracy"
+    )
+
+    plt.xlabel("Epoha")
+    plt.ylabel("Accuracy")
+    plt.title("Tacnost EfficientNetB0 modela")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.show()
+
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(
+        effnet_loss,
+        label="Training loss"
+    )
+    plt.plot(
+        effnet_val_loss,
+        label="Validation loss"
+    )
+
+    plt.xlabel("Epoha")
+    plt.ylabel("Loss")
+    plt.title("Greska EfficientNetB0 modela")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.show()
+
+    best_effnet_epoch = np.argmin(
+        effnet_val_loss
+    )
+
+    print(
+        f"Najbolja epoha: "
+        f"{best_effnet_epoch + 1}"
+    )
+    print(
+        "Validation accuracy: "
+        f"{effnet_val_accuracy[best_effnet_epoch] * 100:.2f}%"
+    )
+    print(
+        "Validation loss: "
+        f"{effnet_val_loss[best_effnet_epoch]:.4f}"
+    )
+
+
 def main():
     args = parse_arguments()
 
@@ -545,6 +764,35 @@ def main():
         history_baseline_35,
         history_augmented,
         history_augmented_continue
+    )
+
+    train_dataset_effnet, val_dataset_effnet, test_dataset_effnet = (
+        create_effnet_datasets(
+            train_dataset,
+            val_dataset,
+            test_dataset
+        )
+    )
+
+    effnet_model, base_model = create_effnet_model(
+        len(class_names)
+    )
+
+    print("\nEfficientNetB0 model:")
+    effnet_model.summary()
+
+    history_effnet, history_effnet_continue, history_effnet_continue2 = (
+        train_effnet_model(
+            effnet_model,
+            train_dataset_effnet,
+            val_dataset_effnet
+        )
+    )
+
+    show_effnet_results(
+        history_effnet,
+        history_effnet_continue,
+        history_effnet_continue2
     )
 
 
