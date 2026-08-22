@@ -670,6 +670,158 @@ def show_effnet_results(
     )
 
 
+def fine_tune_effnet(
+    model,
+    base_model,
+    train_dataset_effnet,
+    val_dataset_effnet
+):
+    print(
+        "Broj slojeva EfficientNetB0 baze:",
+        len(base_model.layers)
+    )
+
+    base_model.trainable = True
+
+    for layer in base_model.layers[:-20]:
+        layer.trainable = False
+
+    for layer in base_model.layers[-20:]:
+        if isinstance(layer, layers.BatchNormalization):
+            layer.trainable = False
+
+    trainable_layers = sum(
+        layer.trainable
+        for layer in base_model.layers
+    )
+
+    print(
+        "Broj trainable slojeva:",
+        trainable_layers
+    )
+
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(
+            learning_rate=1e-5
+        ),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"]
+    )
+
+    early_stopping_finetune = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+
+    history_finetune = model.fit(
+        train_dataset_effnet,
+        validation_data=val_dataset_effnet,
+        epochs=10,
+        callbacks=[early_stopping_finetune]
+    )
+
+    early_stopping_finetune_continue = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+
+    history_finetune_continue = model.fit(
+        train_dataset_effnet,
+        validation_data=val_dataset_effnet,
+        initial_epoch=10,
+        epochs=20,
+        callbacks=[early_stopping_finetune_continue]
+    )
+
+    early_stopping_finetune_continue2 = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+
+    history_finetune_continue2 = model.fit(
+        train_dataset_effnet,
+        validation_data=val_dataset_effnet,
+        initial_epoch=20,
+        epochs=30,
+        callbacks=[early_stopping_finetune_continue2]
+    )
+
+    return (
+        history_finetune,
+        history_finetune_continue,
+        history_finetune_continue2
+    )
+
+
+def show_finetune_results(
+    history_finetune,
+    history_finetune_continue,
+    history_finetune_continue2
+):
+    finetune_accuracy = (
+        history_finetune.history["accuracy"] +
+        history_finetune_continue.history["accuracy"] +
+        history_finetune_continue2.history["accuracy"]
+    )
+
+    finetune_val_accuracy = (
+        history_finetune.history["val_accuracy"] +
+        history_finetune_continue.history["val_accuracy"] +
+        history_finetune_continue2.history["val_accuracy"]
+    )
+
+    finetune_loss = (
+        history_finetune.history["loss"] +
+        history_finetune_continue.history["loss"] +
+        history_finetune_continue2.history["loss"]
+    )
+
+    finetune_val_loss = (
+        history_finetune.history["val_loss"] +
+        history_finetune_continue.history["val_loss"] +
+        history_finetune_continue2.history["val_loss"]
+    )
+
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(finetune_accuracy, label="Training accuracy")
+    plt.plot(finetune_val_accuracy, label="Validation accuracy")
+
+    plt.xlabel("Epoha")
+    plt.ylabel("Accuracy")
+    plt.title("Tačnost EfficientNetB0 modela nakon fine-tuninga")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.show()
+
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(finetune_loss, label="Training loss")
+    plt.plot(finetune_val_loss, label="Validation loss")
+
+    plt.xlabel("Epoha")
+    plt.ylabel("Loss")
+    plt.title("Greška EfficientNetB0 modela nakon fine-tuninga")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.show()
+
+    best_finetune_epoch = np.argmin(finetune_val_loss)
+
+    print(f"Najbolja epoha: {best_finetune_epoch + 1}")
+    print(
+        f"Validation accuracy: "
+        f"{finetune_val_accuracy[best_finetune_epoch] * 100:.2f}%"
+    )
+    print(
+        f"Validation loss: "
+        f"{finetune_val_loss[best_finetune_epoch]:.4f}"
+    )
+
+
 def main():
     args = parse_arguments()
 
@@ -793,6 +945,23 @@ def main():
         history_effnet,
         history_effnet_continue,
         history_effnet_continue2
+    )
+
+    (
+        history_finetune,
+        history_finetune_continue,
+        history_finetune_continue2
+    ) = fine_tune_effnet(
+        effnet_model,
+        base_model,
+        train_dataset_effnet,
+        val_dataset_effnet
+    )
+
+    show_finetune_results(
+        history_finetune,
+        history_finetune_continue,
+        history_finetune_continue2
     )
 
 
