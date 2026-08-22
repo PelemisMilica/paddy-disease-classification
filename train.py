@@ -964,6 +964,21 @@ def main():
         history_finetune_continue2
     )
 
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    final_model_path = (
+        output_dir
+        / "paddy_disease_effnet_final.keras"
+    )
+
+    effnet_model.save(final_model_path)
+
+    print(
+        "Model sačuvan:",
+        final_model_path
+    )
+
 
 if __name__ == "__main__":
     main()
